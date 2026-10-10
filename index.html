@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ask This Video</title>
+  <meta name="description" content="A Chrome extension to chat with any YouTube video, with clickable timestamps." />
+  <link rel="icon" href="/extension/icons/icon48.png" />
+  <style>
+    :root { --bg:#f6f7f8; --surface:#fff; --ink:#111418; --muted:#5d6570; --line:#e3e6ea; --accent:#0f7b6c; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#111315; --surface:#1a1d20; --ink:#eceef0; --muted:#9aa2ab; --line:#2a2e33; --accent:#3ec7b0; color-scheme: dark; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 56px 20px 40px; display: grid; gap: 32px; }
+    header { display: grid; gap: 12px; }
+    header img { width: 56px; height: 56px; }
+    h1 { margin: 0; font-size: 2.2rem; letter-spacing: -0.03em; line-height: 1.1; }
+    h2 { margin: 0 0 10px; font-size: 1.1rem; }
+    p { margin: 0; color: var(--muted); }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+    ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+    code { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: .9em; }
+    a { color: var(--accent); }
+    footer { font-size: .85rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="/extension/icons/icon128.png" alt="" />
+      <h1>Ask This Video</h1>
+      <p>A Chrome extension that lets you chat with any YouTube video. Ask a question and get an answer from what's actually said in it, with timestamps you can click to jump there.</p>
+    </header>
+
+    <section class="card">
+      <h2>Try it (beta)</h2>
+      <ol>
+        <li>Download the extension zip I sent you and unzip it.</li>
+        <li>Open <code>chrome://extensions</code> in Chrome and turn on <strong>Developer mode</strong> (top right).</li>
+        <li>Click <strong>Load unpacked</strong> and choose the unzipped <code>extension</code> folder.</li>
+        <li>Open any YouTube video and click <strong>Ask this video</strong> in the bottom-right corner.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>What I'd like feedback on</h2>
+      <ol>
+        <li>Were the answers correct, and did the timestamps point to the right moment?</li>
+        <li>Did it fail on any video? Please send me the link.</li>
+        <li>Was anything confusing or slow?</li>
+      </ol>
+    </section>
+
+    <footer>Built by <a href="https://pratikpotdukhe.vercel.app">Pratik Potdukhe</a>. Questions and transcript excerpts are sent to OpenAI to generate answers; nothing is stored on the server.</footer>
+  </main>
+</body>
+</html>

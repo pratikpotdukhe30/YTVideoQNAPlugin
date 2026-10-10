@@ -1,7 +1,7 @@
 // POST /api/answer  { question, context: [{start, text}], history: [{role, content}], title }
 //   -> streamed plain text (the answer, token by token)
 // Retrieval happens in the extension; this route only builds the prompt and calls the model.
-import { cors, rateLimited, parseBody, key, OPENAI, CHAT_MODEL } from "./_shared.js";
+import { cors, rateLimited, parseBody, key, OPENAI, CHAT_MODEL, overDailyLimit } from "./_shared.js";
 
 function ts(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
@@ -9,6 +9,11 @@ function ts(sec: number): string {
   const mm = String(m).padStart(h ? 2 : 1, "0"), ss = String(r).padStart(2, "0");
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+
+const OVERVIEW = `You are a helpful assistant that answers questions about one YouTube video.
+You are given summaries of consecutive sections that together cover the WHOLE video, each starting with its timestamp in square brackets.
+Answer the question (usually a summary, overview or list of key points) using these section summaries. Cite the relevant timestamps in the same [mm:ss] format.
+Keep it well structured and concise. Reply in the language of the question.`;
 
 const INSTRUCTIONS = `You are a helpful assistant that answers questions about one YouTube video.
 Answer ONLY from the transcript excerpts provided. If they don't contain the answer, say you couldn't find that in the video.
@@ -20,11 +25,14 @@ export default async function handler(req: any, res: any) {
   if (rateLimited(req, 20)) return res.status(429).json({ error: "Too many questions. Wait a minute and try again." });
 
   const body = parseBody(req);
+  const limitMsg = await overDailyLimit(req, body.installId);
+  if (limitMsg) return res.status(429).json({ error: limitMsg });
+  const overview = body.mode === "overview";
   const question = String(body.question || "").slice(0, 600).trim();
   if (!question) return res.status(400).json({ error: "No question" });
 
   const context = (Array.isArray(body.context) ? body.context : [])
-    .slice(0, 8)
+    .slice(0, overview ? 16 : 8)
     .map((c: any) => `[${ts(Number(c.start) || 0)}] ${String(c.text || "").slice(0, 1500)}`)
     .join("\n\n");
   const history = (Array.isArray(body.history) ? body.history : [])
@@ -35,7 +43,7 @@ export default async function handler(req: any, res: any) {
 
   const input = [
     ...history,
-    { role: "user", content: `Video: ${title}\n\nTranscript excerpts:\n${context}\n\nQuestion: ${question}` },
+    { role: "user", content: `Video: ${title}\n\n${overview ? "Section summaries (whole video)" : "Transcript excerpts"}:\n${context}\n\nQuestion: ${question}` },
   ];
 
   try {
@@ -44,10 +52,10 @@ export default async function handler(req: any, res: any) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key()}` },
       body: JSON.stringify({
         model: CHAT_MODEL,
-        instructions: INSTRUCTIONS,
+        instructions: overview ? OVERVIEW : INSTRUCTIONS,
         input,
         reasoning: { effort: "none" },
-        max_output_tokens: 600,
+        max_output_tokens: overview ? 900 : 600,
         stream: true,
       }),
     });

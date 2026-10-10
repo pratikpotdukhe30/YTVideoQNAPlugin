@@ -20,9 +20,12 @@ flowchart LR
     G -->|answer with [mm:ss] citations| UI[Chat panel]
 ```
 
+**Features:** answers grounded in the transcript with clickable timestamps · whole-video summaries · Key moments (auto chapters) · hybrid keyword + semantic search · streaming with Stop · copy and 👍/👎 feedback · Alt+Q shortcut · daily usage limits.
+
 1. **Transcript.** The extension reads the transcript in the viewer's browser, trying three methods in order: the caption track, YouTube's transcript endpoint, and the transcript panel on the page.
 2. **Indexing.** The transcript is split into overlapping chunks that keep their start time, and each chunk is embedded once. The vectors are cached locally (last 15 videos), so reopening a video is instant and costs nothing.
-3. **Retrieval.** Each question is embedded and the five most similar chunks are selected in the browser.
+3. **Retrieval.** Each question is matched two ways in the browser: by meaning (embeddings) and by exact words (BM25). The two rankings are merged with reciprocal rank fusion, so names and technical terms are found reliably.
+3b. **Whole-video questions.** "Summarize", "key takeaways" and similar questions don't use top-k retrieval. The backend splits the video into ~5-minute sections and summarizes them in parallel (map), then the answer is written from all section summaries (reduce). The same sections power the **Key moments** button and are cached per video.
 4. **Generation.** Only those chunks go to the model, which answers from them alone and cites timestamps. The answer streams into the panel, and timestamps become buttons that seek the video.
 
 ## Design decisions
@@ -38,8 +41,10 @@ flowchart LR
 ```
 api/
   _shared.ts        CORS, rate limiting, config
-  embed.ts          POST /api/embed   -> embeddings
-  answer.ts         POST /api/answer  -> streamed answer
+  embed.ts          POST /api/embed     -> embeddings
+  sections.ts       POST /api/sections  -> section titles and summaries (map step)
+  answer.ts         POST /api/answer    -> streamed answer (passages or overview mode)
+  feedback.ts       POST /api/feedback  -> 👍/👎 written to the Vercel logs
 extension/
   manifest.json     Chrome extension (Manifest V3)
   config.js         Backend URL
@@ -56,15 +61,16 @@ index.html          Landing page with install instructions
 ### 1. Deploy the backend
 
 1. Push this repository to GitHub and import it on [Vercel](https://vercel.com). Framework preset: **Other**.
-2. Add the environment variable `OPENAI_API_KEY`. Optionally set `OPENAI_MODEL`.
-3. Deploy, and note the URL (for example `https://ask-this-video.vercel.app`).
+2. Add the environment variable `OPENAI_API_KEY`. Optionally set `OPENAI_MODEL`, `DAILY_LIMIT_PER_USER` (default 40) and `DAILY_LIMIT_PER_IP` (default 120).
+3. For reliable daily limits, add a free **Upstash Redis** database from the Vercel Marketplace (Storage tab) and connect it to the project. Its environment variables are picked up automatically. Without it, limits only apply per server instance.
+4. Deploy, and note the URL (for example `https://youtubeqnaplugin.vercel.app`).
 
 ### 2. Point the extension at it
 
 Set the URL in `extension/config.js`:
 
 ```js
-self.YTCHAT_API = "https://ask-this-video.vercel.app";
+self.YTCHAT_API = "https://youtubeqnaplugin.vercel.app";
 ```
 
 ### 3. Load the extension
@@ -72,6 +78,10 @@ self.YTCHAT_API = "https://ask-this-video.vercel.app";
 1. Open `chrome://extensions` and turn on **Developer mode**.
 2. Click **Load unpacked** and select the `extension` folder.
 3. Open any YouTube video and click **Ask this video** in the bottom-right corner.
+
+## Reading feedback
+
+Every 👍/👎 is written to the logs as a line starting with `FEEDBACK`, including the question and answer. In Vercel, open the project → **Logs** and search for `FEEDBACK`.
 
 ## Privacy
 
@@ -86,5 +96,6 @@ The transcript chunks and your questions are sent to the backend and to OpenAI t
 ## Roadmap
 
 - Publish on the Chrome Web Store
+- Rebuild the retrieval pipeline with LangChain.js as a comparison
 - Support YouTube Shorts
 - Answer questions about what's on screen, not only what's said

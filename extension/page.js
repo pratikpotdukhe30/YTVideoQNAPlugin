@@ -6,6 +6,16 @@
 (() => {
   // YouTube makes many requests; keep enough timing entries that the caption request isn't dropped.
   try { performance.setResourceTimingBufferSize(3000); } catch { /* ignore */ }
+  // Record any caption request the player makes, whether via fetch or XHR.
+  const seen = [];
+  const note = (u) => { try { const s = String(u); if (s.includes("timedtext")) seen.push(new URL(s, location.href).href); } catch { /* ignore */ } };
+  try {
+    const origFetch = window.fetch;
+    window.fetch = function (input, init) { note(typeof Request !== "undefined" && input instanceof Request ? input.url : input); return origFetch.call(this, input, init); };
+    const origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url, ...rest) { note(url); return origOpen.call(this, method, url, ...rest); };
+  } catch { /* ignore */ }
+
   const reply = (data) => window.postMessage({ source: "ytchat", ...data }, "*");
   const player = () => document.getElementById("movie_player");
 
@@ -16,8 +26,8 @@
   }
 
   function findCaptionUrl(videoId) {
-    const entries = performance.getEntriesByType("resource").map((e) => e.name);
-    const urls = entries.filter((u) => u.includes("/api/timedtext") && u.includes(`v=${videoId}`));
+    const entries = [...performance.getEntriesByType("resource").map((e) => e.name), ...seen];
+    const urls = entries.filter((u) => u.includes("timedtext") && u.includes(`v=${videoId}`));
     return urls.length ? urls[urls.length - 1] : null;
   }
 

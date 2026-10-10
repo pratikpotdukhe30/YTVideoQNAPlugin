@@ -83,7 +83,7 @@ self.YTTranscript = (() => {
   }
 
   // Method 2: the innertube get_transcript endpoint.
-  async function fromTranscriptEndpoint(videoId, player) {
+  async function fromTranscriptEndpoint(videoId, player) { // last resort
     const it = player?.innertube;
     if (!it?.key || !it?.context) return null;
     const html = await (await fetch(`/watch?v=${encodeURIComponent(videoId)}`, { credentials: "include" })).text();
@@ -110,29 +110,65 @@ self.YTTranscript = (() => {
     return out.length ? out : null;
   }
 
-  // Method 3: open the transcript panel and read it from the page.
-  async function fromTranscriptPanel() {
-    const read = () =>
-      [...document.querySelectorAll("ytd-transcript-segment-renderer")]
-        .map((el) => {
-          const t = el.querySelector(".segment-timestamp")?.textContent?.trim() || "0:00";
-          const text = clean(el.querySelector(".segment-text")?.textContent || "");
-          const start = t.split(":").map(Number).reduce((acc, n) => acc * 60 + n, 0);
-          return { start, text };
-        })
-        .filter((s) => s.text);
+  // Method 3: open the transcript panel and read it from what's visible on the page.
+  // It doesn't depend on YouTube's element names: it finds the button by its label and
+  // parses timestamps and text from the panel's visible text.
+  const TIME_LINE = /^(\d{1,2}:)?\d{1,2}:\d{2}$/;
+  const DURATION_LINE = /^\d+\s+(seconds?|minutes?|hours?|secondi|minuti|ore|secondes?|segundos?|sekunden?)\b/i;
+  const toSec = (t) => t.split(":").map(Number).reduce((acc, n) => acc * 60 + n, 0);
 
+  function parsePanelText(text) {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const segs = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (!TIME_LINE.test(lines[i])) continue;
+      let j = i + 1;
+      while (j < lines.length && DURATION_LINE.test(lines[j])) j++;   // skip screen-reader durations
+      if (j < lines.length && !TIME_LINE.test(lines[j])) {
+        const t = clean(lines[j]);
+        if (t) segs.push({ start: toSec(lines[i]), text: t });
+        i = j;
+      }
+    }
+    return segs;
+  }
+
+  function transcriptPanel() {
+    return document.querySelector('ytd-engagement-panel-section-list-renderer[target-id*="transcript"]') ||
+      [...document.querySelectorAll("ytd-engagement-panel-section-list-renderer")].find((p) =>
+        /transcript|trascrizione|transcripci|transkript/i.test(p.getAttribute("target-id") || p.querySelector("#title-text, h2")?.textContent || ""));
+  }
+
+  function findTranscriptButton() {
+    const LABEL = /show transcript|transcript|trascrizione|transcripción|transcription|transkript/i;
+    const direct = document.querySelector("ytd-video-description-transcript-section-renderer button");
+    if (direct) return direct;
+    return [...document.querySelectorAll("ytd-watch-metadata button, #description button, ytd-menu-popup-renderer tp-yt-paper-item, button")]
+      .find((b) => LABEL.test(b.getAttribute("aria-label") || "") || LABEL.test((b.textContent || "").trim()));
+  }
+
+  async function fromTranscriptPanel() {
+    const read = () => { const p = transcriptPanel(); return p ? parsePanelText(p.innerText ?? p.textContent ?? "") : []; };
     let segs = read();
     if (segs.length) return segs;
-    const btn = document.querySelector("ytd-video-description-transcript-section-renderer button");
-    if (!btn) return null;
+
+    // The transcript button sits in the expanded description.
+    document.querySelector("ytd-text-inline-expander #expand, #description-inline-expander #expand, tp-yt-paper-button#expand")?.click();
+    await new Promise((r) => setTimeout(r, 400));
+    const btn = findTranscriptButton();
+    if (!btn) { log("transcript button not found"); return null; }
     btn.click();
-    for (let i = 0; i < 20 && !segs.length; i++) {
-      await new Promise((r) => setTimeout(r, 300));
+
+    for (let i = 0; i < 40 && !segs.length; i++) {
+      await new Promise((r) => setTimeout(r, 250));
       segs = read();
     }
-    // Close the panel again so the page looks the way the viewer left it.
-    document.querySelector('ytd-engagement-panel-section-list-renderer[target-id*="transcript"] #visibility-button button')?.click();
+    if (!segs.length) log("transcript panel opened but no lines were read", transcriptPanel()?.innerText?.slice(0, 200));
+
+    // Close the panel and collapse the description so the page looks the way the viewer left it.
+    const panel = transcriptPanel();
+    (panel?.querySelector('#visibility-button button, button[aria-label*="lose" i], button[aria-label*="hiudi" i]'))?.click();
+    document.querySelector("ytd-text-inline-expander #collapse, #description-inline-expander #collapse")?.click();
     return segs.length ? segs : null;
   }
 
@@ -142,8 +178,8 @@ self.YTTranscript = (() => {
     const methods = [
       () => fromPlayerRequest(videoId),
       () => fromCaptionTrack(player),
-      () => fromTranscriptEndpoint(videoId, player),
       () => fromTranscriptPanel(),
+      () => fromTranscriptEndpoint(videoId, player),
     ];
     for (const m of methods) {
       try {
